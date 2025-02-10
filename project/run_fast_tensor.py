@@ -7,7 +7,10 @@ import minitorch
 datasets = minitorch.datasets
 FastTensorBackend = minitorch.TensorBackend(minitorch.FastOps)
 if numba.cuda.is_available():
+    print("Using GPU")
     GPUBackend = minitorch.TensorBackend(minitorch.CudaOps)
+else:
+    print("Using CPU")
 
 
 def default_log_fn(epoch, total_loss, correct, losses):
@@ -22,6 +25,7 @@ def RParam(*shape, backend):
 class Network(minitorch.Module):
     def __init__(self, hidden, backend):
         super().__init__()
+        self.backend = backend
 
         # Submodules
         self.layer1 = Linear(2, hidden, backend)
@@ -29,13 +33,17 @@ class Network(minitorch.Module):
         self.layer3 = Linear(hidden, 1, backend)
 
     def forward(self, x):
-        # TODO: Implement for Task 3.5.
-        raise NotImplementedError("Need to implement for Task 3.5")
-
+        y = self.layer1(x)
+        y = self.backend.relu_map(y)
+        y = self.layer2(y)
+        y = self.backend.relu_map(y)
+        y = self.layer3(y)
+        return self.backend.sigmoid_map(y)
 
 class Linear(minitorch.Module):
     def __init__(self, in_size, out_size, backend):
         super().__init__()
+        self.backend = backend
         self.weights = RParam(in_size, out_size, backend=backend)
         s = minitorch.zeros((out_size,), backend=backend)
         s = s + 0.1
@@ -43,8 +51,8 @@ class Linear(minitorch.Module):
         self.out_size = out_size
 
     def forward(self, x):
-        # TODO: Implement for Task 3.5.
-        raise NotImplementedError("Need to implement for Task 3.5")
+        matmul = self.backend.matrix_multiply
+        return matmul(x, self.weights.value) + self.bias.value
 
 
 class FastTrain:
@@ -59,7 +67,7 @@ class FastTrain:
     def run_many(self, X):
         return self.model.forward(minitorch.tensor(X, backend=self.backend))
 
-    def train(self, data, learning_rate, max_epochs=500, log_fn=default_log_fn):
+    def train(self, data, learning_rate, max_epochs=5000, log_fn=default_log_fn):
         self.model = Network(self.hidden_layers, self.backend)
         optim = minitorch.SGD(self.model.parameters(), learning_rate)
         BATCH = 10
@@ -102,7 +110,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--PTS", type=int, default=50, help="number of points")
+    parser.add_argument("--PTS", type=int, default=500, help="number of points")
     parser.add_argument("--HIDDEN", type=int, default=10, help="number of hiddens")
     parser.add_argument("--RATE", type=float, default=0.05, help="learning rate")
     parser.add_argument("--BACKEND", default="cpu", help="backend mode")
@@ -116,7 +124,7 @@ if __name__ == "__main__":
     if args.DATASET == "xor":
         data = minitorch.datasets["Xor"](PTS)
     elif args.DATASET == "simple":
-        data = minitorch.datasets["Simple"].simple(PTS)
+        data = minitorch.datasets["Simple"](PTS)
     elif args.DATASET == "split":
         data = minitorch.datasets["Split"](PTS)
 
